@@ -4,6 +4,7 @@ CREATE DATABASE IF NOT EXISTS lokatoo
 
 USE lokatoo;
 
+
 CREATE TABLE agence (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     nom             VARCHAR(150) NOT NULL,
@@ -16,6 +17,7 @@ CREATE TABLE agence (
 
 INSERT INTO agence (nom, adresse, telephone, email)
 VALUES ('Agence Immobilière', 'Cotonou, Bénin', '+229 01 00 00 00 00', 'contact@agence.bj');
+
 
 CREATE TABLE utilisateur (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -61,12 +63,14 @@ CREATE TABLE gerant (
         REFERENCES agence(id)      ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
+
 CREATE TABLE secretaire (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     utilisateur_id  INT UNSIGNED NOT NULL UNIQUE,
     CONSTRAINT fk_sec_user FOREIGN KEY (utilisateur_id)
         REFERENCES utilisateur(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
 
 CREATE TABLE agent_immobilier (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -75,6 +79,7 @@ CREATE TABLE agent_immobilier (
     CONSTRAINT fk_agent_user FOREIGN KEY (utilisateur_id)
         REFERENCES utilisateur(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
 
 CREATE TABLE bailleur (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -87,6 +92,7 @@ CREATE TABLE bailleur (
     rib             VARCHAR(100),
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
 
 CREATE TABLE locataire (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -104,6 +110,7 @@ CREATE TABLE locataire (
     CONSTRAINT fk_locataire_user FOREIGN KEY (utilisateur_id)
         REFERENCES utilisateur(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
+
 
 CREATE TABLE bien_immobilier (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -124,6 +131,7 @@ CREATE TABLE bien_immobilier (
     CONSTRAINT fk_bien_bailleur FOREIGN KEY (bailleur_id)
         REFERENCES bailleur(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
+
 
 CREATE TABLE contrat_location (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -167,6 +175,7 @@ CREATE TABLE paiement (
     CONSTRAINT fk_paiement_agent   FOREIGN KEY (enregistre_par)
         REFERENCES agent_immobilier(id)  ON DELETE SET NULL
 ) ENGINE=InnoDB;
+
 
 CREATE TABLE impaye (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -231,7 +240,6 @@ CREATE TABLE decaissement (
         REFERENCES directeur_general(id)   ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-
 CREATE TABLE journal_activite (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     utilisateur_id  INT UNSIGNED,
@@ -245,7 +253,6 @@ CREATE TABLE journal_activite (
         REFERENCES utilisateur(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-
 CREATE INDEX idx_bien_bailleur     ON bien_immobilier(bailleur_id);
 CREATE INDEX idx_contrat_locataire ON contrat_location(locataire_id);
 CREATE INDEX idx_contrat_bien      ON contrat_location(bien_id);
@@ -257,3 +264,44 @@ CREATE INDEX idx_etat_contrat      ON entree_sortie(contrat_id);
 CREATE INDEX idx_decaiss_bailleur  ON decaissement(bailleur_id);
 CREATE INDEX idx_decaiss_statut    ON decaissement(statut);
 CREATE INDEX idx_journal_user      ON journal_activite(utilisateur_id);
+
+
+CREATE TABLE demande_resiliation (
+    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    contrat_id      INT UNSIGNED NOT NULL,
+    locataire_id    INT UNSIGNED NOT NULL,
+    motif           TEXT NOT NULL,
+    date_demande    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    statut          ENUM('en_attente','acceptee','refusee')
+                    NOT NULL DEFAULT 'en_attente',
+    traite_par      INT UNSIGNED,               -- gerant.id
+    date_traitement TIMESTAMP NULL,
+    observations    TEXT,
+    CONSTRAINT fk_resil_contrat   FOREIGN KEY (contrat_id)
+        REFERENCES contrat_location(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_resil_locataire FOREIGN KEY (locataire_id)
+        REFERENCES locataire(id)        ON DELETE RESTRICT,
+    CONSTRAINT fk_resil_gerant    FOREIGN KEY (traite_par)
+        REFERENCES gerant(id)           ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_resil_contrat   ON demande_resiliation(contrat_id);
+CREATE INDEX idx_resil_statut    ON demande_resiliation(statut);
+
+
+CREATE TABLE autorisation_sortie_argent (
+    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    decaissement_id INT UNSIGNED NOT NULL,
+    gerant_id       INT UNSIGNED NOT NULL,
+    montant         DECIMAL(10,2) NOT NULL,
+    motif           TEXT,
+    statut          ENUM('autorise','refuse') NOT NULL DEFAULT 'autorise',
+    date_autorisation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    observations    TEXT,
+    CONSTRAINT fk_autorisation_decaiss FOREIGN KEY (decaissement_id)
+        REFERENCES decaissement(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_autorisation_gerant  FOREIGN KEY (gerant_id)
+        REFERENCES gerant(id)       ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_autorisation_decaiss ON autorisation_sortie_argent(decaissement_id);

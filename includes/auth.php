@@ -68,7 +68,7 @@ function requireRole(string|array $roles): void
     if (!aRole($roles)) {
         // Rediriger vers le dashboard avec un message d'accès refusé
         $_SESSION['flash_error'] = "Accès refusé. Vous n'avez pas les droits nécessaires.";
-        header('Location: ' . baseUrl('dashboard/index.php'));
+        header('Location: ' . baseUrl('modules/dashboard/index.php'));
         exit;
     }
 }
@@ -137,11 +137,11 @@ function redirectionParRole(): void
 {
     $role = getRole();
     $destinations = [
-        ROLE_DG         => baseUrl('dashboard/index.php'),
-        ROLE_GERANT     => baseUrl('dashboard/index.php'),
-        ROLE_SECRETAIRE => baseUrl('dashboard/index.php'),
-        ROLE_AGENT      => baseUrl('dashboard/index.php'),
-        ROLE_LOCATAIRE  => baseUrl('dashboard/index.php'),
+        ROLE_DG         => baseUrl('modules/dashboard/index.php'),
+        ROLE_GERANT     => baseUrl('modules/dashboard/index.php'),
+        ROLE_SECRETAIRE => baseUrl('modules/dashboard/index.php'),
+        ROLE_AGENT      => baseUrl('modules/dashboard/index.php'),
+        ROLE_LOCATAIRE  => baseUrl('modules/dashboard/index.php'),
     ];
     $url = $destinations[$role] ?? baseUrl('auth/login.php');
     header('Location: ' . $url);

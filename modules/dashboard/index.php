@@ -1,8 +1,5 @@
 <?php
 /**
- * ============================================================
- *  TABLEAU DE BORD (DASHBOARD)
- * ============================================================
  * Gère l'affichage des statistiques et des accès rapides
  * en fonction du rôle de l'utilisateur connecté.
  */
@@ -14,7 +11,7 @@ requireConnexion();
 $user = utilisateurConnecte();
 $role = getRole();
 
-// ── RÉCUPÉRATION DES STATISTIQUES ───────────────────────────
+//  RÉCUPÉRATION DES STATISTIQUES 
 
 // Nombre total de locataires enregistrés
 $nb_locataires = $db->query("SELECT COUNT(*) FROM locataire")->fetchColumn();
@@ -36,7 +33,7 @@ $stmt->execute([':mois' => $mois_actuel]);
 $nb_impayes    = $db->query("SELECT COUNT(*) FROM impaye WHERE statut='en_cours'")->fetchColumn();
 $nb_decaiss    = $db->query("SELECT COUNT(*) FROM decaissement WHERE statut NOT IN ('paye')")->fetchColumn();
 
-// ── CONFIGURATION DU MENU LATÉRAL ───────────────────────────
+// ── CONFIGURATION DU MENU LATÉRAL
 $menus = [
     ['icon' => '👤', 'label' => 'Locataires',    'url' => baseUrl('modules/locataires/index.php'),
      'roles' => ['directeur_general','gerant','secretaire','agent_immobilier']],
@@ -84,9 +81,6 @@ $label_role = $labels_role[$role] ?? $role;
 </head>
 <body class="dashboard-body">
 
-<!-- ══════════════════════════════════════════════════════════
-     SIDEBAR : Navigation latérale
-     ══════════════════════════════════════════════════════════ -->
 <aside class="sidebar">
     <div class="sidebar-brand">
         <div class="logo-icon">
@@ -122,21 +116,28 @@ $label_role = $labels_role[$role] ?? $role;
 
     <div class="sidebar-footer">
         <a class="btn-logout" href="<?= baseUrl('auth/logout.php') ?>">
-             <-- Deconnexion
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Déconnexion</span>
         </a>
     </div>
 </aside>
 
-<!-- ══════════════════════════════════════════════════════════
-     MAIN : Zone de contenu principal
-     ══════════════════════════════════════════════════════════ -->
 <div class="main">
 
     <!-- Topbar : Barre supérieure -->
     <div class="topbar">
         <span class="topbar-title">Vue d'ensemble</span>
         <div class="topbar-right">
-            <button class="btn-theme" onclick="toggleTheme()" id="themeBtn">🌙 Sombre</button>
+            <button class="btn-theme" onclick="toggleTheme()" id="themeBtn">
+                <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+                <span id="themeText">Sombre</span>
+            </button>
         </div>
     </div>
 

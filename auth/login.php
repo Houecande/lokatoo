@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <h1>Gérez vos biens,<br>vos locataires<br>et vos <span>paiements.</span></h1>
-        <p>Plateforme tout-en un pour agences immoilières.</br>Simple rapide et sécurisé</p>
+        <p>Plateforme tout-en un pour agences immoilières.</br>Simple rapide et sécurisé.</p>
     </div>
 
     <!-- Section Authentification -->
@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- Sélecteur de thème -->
         <button class="toggle-theme" onclick="toggleTheme()" id="themeBtn">
-            <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <!-- Moon icon (default) -->
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
             </svg>

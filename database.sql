@@ -36,12 +36,6 @@ CREATE TABLE utilisateur (
         REFERENCES agence(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- Compte DirecteurGeneral par défaut  (mot de passe : Admin@1234)
-INSERT INTO utilisateur (nom, prenom, email, mot_de_passe, role, agence_id)
-VALUES ('Admin', 'DG',
-        'dg@agence.bj',
-        '$2y$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
-        'directeur_general', 1);
 
 CREATE TABLE directeur_general (
     id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -1,11 +1,4 @@
 <?php
-/**
- * auth/login.php
- * Gestion de l'authentification des utilisateurs - Lokatoo
- * 
- * Ce script gère l'affichage du formulaire de connexion, la validation
- * des identifiants et la redirection vers le tableau de bord approprié.
- */
 
 require_once '../config/db.php';
 require_once '../includes/auth.php';

@@ -30,6 +30,8 @@ CREATE TABLE utilisateur (
                          'agent_immobilier','locataire') NOT NULL,
     actif           TINYINT(1) NOT NULL DEFAULT 1,
     agence_id       INT UNSIGNED,
+    reset_token     VARCHAR(255) NULL,
+    reset_expires   DATETIME NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_user_agence FOREIGN KEY (agence_id)

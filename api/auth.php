@@ -1,7 +1,4 @@
 <?php
-//  api/auth.php
-//  POST /api/auth.php   → { success, token, user }
-//  POST /api/auth.php?action=logout → { success }
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/response.php';
 require_once __DIR__ . '/../includes/auth_check.php';
@@ -18,7 +15,7 @@ $body = json_decode(file_get_contents('php://input'), true);
 $email = trim($body['email'] ?? '');
 $mdp   = trim($body['mot_de_passe'] ?? '');
 
-// ── Validation basique ──────────────────────────────────────
+// Validation basique 
 if (empty($email) || empty($mdp)) {
     badRequest('Email et mot de passe requis');
 }
@@ -27,7 +24,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     badRequest('Format email invalide');
 }
 
-// ── Recherche dans la BDD ───────────────────────────────────
+//  Recherche dans la BDD 
 $stmt = $db->prepare("
     SELECT id, nom, prenom, email, mot_de_passe, role, actif
     FROM utilisateur
@@ -37,7 +34,7 @@ $stmt = $db->prepare("
 $stmt->execute([':email' => $email]);
 $user = $stmt->fetch();
 
-// ── Vérification ────────────────────────────────────────────
+// Vérification 
 if (!$user) {
     unauthorized('Email ou mot de passe incorrect');
 }
@@ -50,7 +47,7 @@ if (!password_verify($mdp, $user['mot_de_passe'])) {
     unauthorized('Email ou mot de passe incorrect');
 }
 
-// ── Créer le token JWT ──────────────────────────────────────
+// Créer le token JWT
 $token = creerToken([
     'id'     => $user['id'],
     'nom'    => $user['nom'],
@@ -59,7 +56,7 @@ $token = creerToken([
     'role'   => $user['role'],
 ]);
 
-// ── Journal de connexion ────────────────────────────────────
+//  Journal de connexion 
 $log = $db->prepare("
     INSERT INTO journal_activite (utilisateur_id, action, details, ip)
     VALUES (:uid, 'connexion', 'Connexion via API', :ip)
@@ -69,7 +66,7 @@ $log->execute([
     ':ip'  => $_SERVER['REMOTE_ADDR'] ?? '',
 ]);
 
-// ── Réponse finale ──────────────────────────────────────────
+//  Réponse finale 
 ok([
     'token' => $token,
     'user'  => [

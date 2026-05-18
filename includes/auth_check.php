@@ -41,10 +41,27 @@ function verifierToken(string $token): ?array
 //  Appelée en haut de chaque endpoint protégé
 function getTokenUser(): array
 {
-    $header = $_SERVER['HTTP_AUTHORIZATION']
-           ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-           ?? '';
+    $header = '';
 
+    // 1. Tentative classique via $_SERVER
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $header = $_SERVER['HTTP_AUTHORIZATION'];
+    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    } 
+    // 2. Secours pour Apache / WAMP (Si VB.NET envoie le header mais qu'Apache le masque)
+    elseif (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        // On gère la casse au cas où (Authorization ou authorization)
+        foreach ($headers as $key => $value) {
+            if (strcasecmp($key, 'Authorization') === 0) {
+                $header = $value;
+                break;
+            }
+        }
+    }
+
+    // Vérification du format Bearer
     if (empty($header) || !str_starts_with($header, 'Bearer ')) {
         unauthorized('Token manquant ou invalide');
     }

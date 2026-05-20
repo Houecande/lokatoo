@@ -1,86 +1,189 @@
 <?php
-//  includes/response.php
-//  À inclure EN PREMIER dans chaque fichier API
+// ============================================================
+//  api/biens.php — GET / POST / PUT / DELETE
+//  IMPORTANT : response.php doit etre inclus EN PREMIER
+// ============================================================
 
-// Bloquer TOUT affichage d'erreur PHP dans la réponse HTTP
-// Les erreurs iront dans les logs serveur uniquement
+// Bloquer les erreurs PHP immédiatement
 ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
 error_reporting(0);
-
-// Intercepter les erreurs fatales et les retourner en JSON propre
-register_shutdown_function(function () {
-    $erreur = error_get_last();
-    if ($erreur && in_array($erreur['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-        // Vider tout ce qui aurait pu être affiché avant
-        if (ob_get_level()) ob_clean();
-        http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'message' => 'Erreur serveur : ' . $erreur['message'] .
-                         ' (ligne ' . $erreur['line'] . ' dans ' . basename($erreur['file']) . ')',
-            'data'    => null,
-        ], JSON_UNESCAPED_UNICODE);
-    }
-});
-
-// Démarrer le tampon de sortie pour pouvoir nettoyer si besoin
 ob_start();
 
-function jsonResponse(bool $success, mixed $data = null, string $message = '', int $code = 200): void
-{
-    if (ob_get_level()) ob_clean();
-    http_response_code($code);
-    header('Content-Type: application/json; charset=utf-8');
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization');
-    echo json_encode([
-        'success' => $success,
-        'message' => $message,
-        'data'    => $data,
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-}
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/response.php';
+require_once __DIR__ . '/../includes/auth_check.php';
 
-function ok(mixed $data = null, string $message = ''): void
-{
-    jsonResponse(true, $data, $message, 200);
-}
+$user   = getTokenUser();
+$method = $_SERVER['REQUEST_METHOD'];
+$id     = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$body   = json_decode(file_get_contents('php://input'), true) ?? [];
 
-function created(mixed $data = null, string $message = 'Créé avec succès'): void
-{
-    jsonResponse(true, $data, $message, 201);
-}
+switch ($method) {
 
-function badRequest(string $message = 'Requête invalide'): void
-{
-    jsonResponse(false, null, $message, 400);
-}
+    case 'GET':
+        try {
+            $rows = $db->query("
+                SELECT
+                    bi.id,
+                    bi.bailleur_id,
+                    bi.type,
+                    bi.adresse,
+                    bi.quartier,
+                    bi.ville,
+                    bi.surface_m2,
+                    bi.nb_pieces,
+                    bi.loyer_mensuel,
+                    bi.charges,
+                    bi.statut,
+                    bi.description,
+                    bi.created_at,
+                    CONCAT(b.prenom, ' ', b.nom) AS bailleur_nom,
+                    b.telephone                  AS bailleur_tel
+                FROM bien_immobilier bi
+                JOIN bailleur b ON b.id = bi.bailleur_id
+                ORDER BY bi.created_at DESC
+            ")->fetchAll(PDO::FETCH_ASSOC);
+            ok($rows);
+        } catch (Exception $e) {
+            serverError('Erreur BDD : ' . $e->getMessage());
+        }
+        break;
 
-function unauthorized(string $message = 'Non autorisé'): void
-{
-    jsonResponse(false, null, $message, 401);
-}
+    case 'POST':
+        if (empty($body['bailleur_id']))   badRequest('Bailleur obligatoire');
+        if (empty($body['type']))          badRequest('Type obligatoire');
+        if (empty($body['adresse']))       badRequest('Adresse obligatoire');
+        if (empty($body['loyer_mensuel'])) badRequest('Loyer mensuel obligatoire');
 
-function forbidden(string $message = 'Accès refusé'): void
-{
-    jsonResponse(false, null, $message, 403);
-}
+        try {
+            $stmt = $db->prepare("
+                INSERT INTO bien_immobilier
+                    (bailleur_id, type, adresse, quartier, ville,
+                     surface_m2, nb_pieces, loyer_mensuel, charges, statut, description)
+                VALUES
+                    (:bid, :type, :adresse, :quartier, :ville,
+                     :surface, :pieces, :loyer, :charges, :statut, :desc)
+            ");
+            $stmt->execute([
+                ':bid'     => (int)$body['bailleur_id'],
+                ':type'    => trim($body['type']),
+                ':adresse' => trim($body['adresse']),
+                ':quartier'=> trim($body['quartier'] ?? ''),
+                ':ville'   => trim($body['ville'] ?? 'Cotonou'),
+                ':surface' => !empty($body['surface_m2']) ? (float)$body['surface_m2'] : null,
+                ':pieces'  => !empty($body['nb_pieces'])  ? (int)$body['nb_pieces']    : null,
+                ':loyer'   => (float)$body['loyer_mensuel'],
+                ':charges' => (float)($body['charges'] ?? 0),
+                ':statut'  => in_array($body['statut'] ?? 'libre', ['libre','occupe','travaux'])
+                              ? $body['statut'] : 'libre',
+                ':desc'    => trim($body['description'] ?? ''),
+            ]);
+            $newId = $db->lastInsertId();
+            $db->prepare("INSERT INTO journal_activite
+                          (utilisateur_id, action, table_cible, id_cible, ip)
+                          VALUES (?, 'bien_cree', 'bien_immobilier', ?, ?)")
+               ->execute([$user['id'], $newId, $_SERVER['REMOTE_ADDR'] ?? '']);
+            created(['id' => $newId], 'Bien créé avec succès');
+        } catch (Exception $e) {
+            serverError('Erreur création : ' . $e->getMessage());
+        }
+        break;
 
-function notFound(string $message = 'Ressource introuvable'): void
-{
-    jsonResponse(false, null, $message, 404);
-}
+    case 'PUT':
+        if (!$id)                          badRequest('ID bien manquant');
+        if (empty($body['bailleur_id']))   badRequest('Bailleur obligatoire');
+        if (empty($body['type']))          badRequest('Type obligatoire');
+        if (empty($body['adresse']))       badRequest('Adresse obligatoire');
+        if (empty($body['loyer_mensuel'])) badRequest('Loyer mensuel obligatoire');
 
-function serverError(string $message = 'Erreur serveur'): void
-{
-    jsonResponse(false, null, $message, 500);
-}
+        try {
+            $stmt = $db->prepare("
+                UPDATE bien_immobilier SET
+                    bailleur_id   = :bid,
+                    type          = :type,
+                    adresse       = :adresse,
+                    quartier      = :quartier,
+                    ville         = :ville,
+                    surface_m2    = :surface,
+                    nb_pieces     = :pieces,
+                    loyer_mensuel = :loyer,
+                    charges       = :charges,
+                    statut        = :statut,
+                    description   = :desc
+                WHERE id = :id
+            ");
+            $stmt->execute([
+                ':bid'     => (int)$body['bailleur_id'],
+                ':type'    => trim($body['type']),
+                ':adresse' => trim($body['adresse']),
+                ':quartier'=> trim($body['quartier'] ?? ''),
+                ':ville'   => trim($body['ville'] ?? 'Cotonou'),
+                ':surface' => !empty($body['surface_m2']) ? (float)$body['surface_m2'] : null,
+                ':pieces'  => !empty($body['nb_pieces'])  ? (int)$body['nb_pieces']    : null,
+                ':loyer'   => (float)$body['loyer_mensuel'],
+                ':charges' => (float)($body['charges'] ?? 0),
+                ':statut'  => in_array($body['statut'] ?? 'libre', ['libre','occupe','travaux'])
+                              ? $body['statut'] : 'libre',
+                ':desc'    => trim($body['description'] ?? ''),
+                ':id'      => $id,
+            ]);
+            $db->prepare("INSERT INTO journal_activite
+                          (utilisateur_id, action, table_cible, id_cible, ip)
+                          VALUES (?, 'bien_modifie', 'bien_immobilier', ?, ?)")
+               ->execute([$user['id'], $id, $_SERVER['REMOTE_ADDR'] ?? '']);
+            ok(['id' => $id], 'Bien modifié avec succès');
+        } catch (Exception $e) {
+            serverError('Erreur modification : ' . $e->getMessage());
+        }
+        break;
 
-// Répondre aux preflight CORS
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
+    case 'DELETE':
+        if (!$id) badRequest('ID bien manquant');
+
+        try {
+            // Vérifier contrat actif ou suspendu
+            $stmt = $db->prepare("
+                SELECT COUNT(*) FROM contrat_location
+                WHERE bien_id = ? AND statut IN ('en_cours', 'suspendu')
+            ");
+            $stmt->execute([$id]);
+            if ($stmt->fetchColumn() > 0) {
+                badRequest('Ce bien a un contrat actif — résiliez d\'abord le contrat avant de supprimer');
+            }
+
+            // Vérifier contrats historiques
+            $stmt2 = $db->prepare("SELECT COUNT(*) FROM contrat_location WHERE bien_id = ?");
+            $stmt2->execute([$id]);
+            $nbContrats = (int)$stmt2->fetchColumn();
+
+            if ($nbContrats > 0) {
+                // Archiver au lieu de supprimer
+                $db->prepare("
+                    UPDATE bien_immobilier
+                    SET statut = 'travaux',
+                        description = CONCAT(COALESCE(description, ''), ' [Archivé le " . date('d/m/Y') . "]')
+                    WHERE id = ?
+                ")->execute([$id]);
+                $db->prepare("INSERT INTO journal_activite
+                              (utilisateur_id, action, table_cible, id_cible, details, ip)
+                              VALUES (?, 'bien_archive', 'bien_immobilier', ?, 'Archivé - historique contrat existant', ?)")
+                   ->execute([$user['id'], $id, $_SERVER['REMOTE_ADDR'] ?? '']);
+                ok(['id' => $id, 'archive' => true],
+                   'Bien archivé (il possède un historique de contrats)');
+            } else {
+                // Suppression directe
+                $db->prepare("DELETE FROM bien_immobilier WHERE id = ?")->execute([$id]);
+                $db->prepare("INSERT INTO journal_activite
+                              (utilisateur_id, action, table_cible, id_cible, ip)
+                              VALUES (?, 'bien_supprime', 'bien_immobilier', ?, ?)")
+                   ->execute([$user['id'], $id, $_SERVER['REMOTE_ADDR'] ?? '']);
+                ok(null, 'Bien supprimé avec succès');
+            }
+        } catch (Exception $e) {
+            serverError('Erreur suppression : ' . $e->getMessage());
+        }
+        break;
+
+    default:
+        badRequest('Méthode non autorisée');
 }

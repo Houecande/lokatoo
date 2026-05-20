@@ -1,41 +1,52 @@
 <?php
+// ============================================================
 //  includes/response.php
-//  À inclure EN PREMIER dans chaque fichier API
+//  DOIT etre inclus EN PREMIER dans chaque fichier api/
+// ============================================================
 
-// Bloquer TOUT affichage d'erreur PHP dans la réponse HTTP
-// Les erreurs iront dans les logs serveur uniquement
+// 1. Bloquer tout affichage d'erreur PHP
 ini_set('display_errors', 0);
 ini_set('display_startup_errors', 0);
 error_reporting(0);
 
-// Intercepter les erreurs fatales et les retourner en JSON propre
+// 2. Tampon de sortie pour intercepter tout output parasite
+if (!ob_get_level()) ob_start();
+
+// 3. Intercepter les erreurs fatales PHP et les convertir en JSON
 register_shutdown_function(function () {
-    $erreur = error_get_last();
-    if ($erreur && in_array($erreur['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-        // Vider tout ce qui aurait pu être affiché avant
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
         if (ob_get_level()) ob_clean();
         http_response_code(500);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
             'success' => false,
-            'message' => 'Erreur serveur : ' . $erreur['message'] .
-                         ' (ligne ' . $erreur['line'] . ' dans ' . basename($erreur['file']) . ')',
+            'message' => 'Erreur PHP : ' . $err['message']
+                       . ' — ligne ' . $err['line']
+                       . ' (' . basename($err['file']) . ')',
             'data'    => null,
         ], JSON_UNESCAPED_UNICODE);
     }
 });
 
-// Démarrer le tampon de sortie pour pouvoir nettoyer si besoin
-ob_start();
+// 4. Headers CORS
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+// Répondre aux preflight CORS
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// ── Fonctions de réponse ────────────────────────────────────
 
 function jsonResponse(bool $success, mixed $data = null, string $message = '', int $code = 200): void
 {
     if (ob_get_level()) ob_clean();
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization');
     echo json_encode([
         'success' => $success,
         'message' => $message,
@@ -77,10 +88,4 @@ function notFound(string $message = 'Ressource introuvable'): void
 function serverError(string $message = 'Erreur serveur'): void
 {
     jsonResponse(false, null, $message, 500);
-}
-
-// Répondre aux preflight CORS
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
 }

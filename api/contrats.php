@@ -1,221 +1,171 @@
 <?php
-// Désactiver l'affichage des erreurs HTML au milieu du flux pour éviter de casser le JSON VB.NET
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
+//  api/contrats.php — GET / POST / PUT
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/response.php';
+require_once __DIR__ . '/../includes/auth_check.php';
 
-// En-têtes obligatoires pour une API REST
-header("Access-Control-Allow-Origin: *");
-header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
-
-// Gestion des requêtes de pré-vérification CORS (OPTIONS)
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
-
-// -------------------------------------------------------------------------
-// 1. CONNEXION À LA BASE DE DONNÉES
-// -------------------------------------------------------------------------
-$host = "localhost";
-$db_name = "lokatoo"; 
-$username = "root";
-$password = "";
-
-// ⚠️ CHANGE LE NOM ICI SI TA TABLE S'APPELLE AUTREMENT (ex: "contrat" sans "s")
-$table = "contrats"; 
-
-try {
-    $pdo = new PDO("mysql:host=" . $host . ";dbname=" . $db_name . ";charset=utf8", $username, $password);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-} catch (PDOException $exception) {
-    http_response_code(500);
-    echo json_encode([
-        "success" => false,
-        "message" => "Erreur de connexion à la base de données : " . $exception->getMessage()
-    ]);
-    exit;
-}
-
-// -------------------------------------------------------------------------
-// 2. TRAITEMENT DES REQUÊTES HTTP
-// -------------------------------------------------------------------------
+$user   = getTokenUser();
 $method = $_SERVER['REQUEST_METHOD'];
+$id     = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$body   = json_decode(file_get_contents('php://input'), true) ?? [];
 
 switch ($method) {
 
-    // ==========================================
-    // CAS GET : Récupération des contrats
-    // ==========================================
+
     case 'GET':
-        try {
-            // Requête SQL combinée pour récupérer les infos complètes nécessaires à ton DataGridView
-            $query = "SELECT c.*, 
-                             l.nom AS locataire_nom, l.prenom AS locataire_prenom,
-                             b.titre AS bien_titre, b.type AS bien_type
-                      FROM {$table} c
-                      LEFT JOIN locataires l ON c.locataire_id = l.id
-                      LEFT JOIN biens b ON c.bien_id = b.id
-                      ORDER BY c.id DESC";
-                      
-            $stmt = $pdo->prepare($query);
-            $stmt->execute();
-            $contrats = $stmt->fetchAll();
 
-            echo json_encode([
-                "success" => true,
-                "message" => "Liste des contrats récupérée.",
-                "data" => $contrats
-            ]);
-        } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode([
-                "success" => false,
-                "message" => "Erreur lors de la récupération : " . $e->getMessage()
-            ]);
-        }
+        $rows = $db->query("
+            SELECT
+                cl.id,
+                cl.locataire_id,
+                cl.bien_id,
+                cl.date_debut,
+                cl.date_fin,
+                cl.duree_mois,
+                cl.loyer,
+                cl.caution,
+                cl.jour_echeance,
+                cl.statut,
+                cl.observations,
+                cl.created_at,
+                CONCAT(l.prenom, ' ', l.nom)  AS locataire_nom,
+                l.telephone                    AS locataire_tel,
+                bi.adresse                     AS bien_adresse,
+                bi.type                        AS bien_type,
+                bi.quartier                    AS bien_quartier,
+                bi.loyer_mensuel               AS bien_loyer,
+                CONCAT(u.prenom, ' ', u.nom)   AS agent_nom
+            FROM contrat_location cl
+            JOIN locataire l         ON l.id  = cl.locataire_id
+            JOIN bien_immobilier bi  ON bi.id = cl.bien_id
+            JOIN agent_immobilier ai ON ai.id = cl.agent_id
+            JOIN utilisateur u       ON u.id  = ai.utilisateur_id
+            ORDER BY cl.created_at DESC
+        ")->fetchAll();
+        ok($rows);
         break;
 
-    // ==========================================
-    // CAS POST : Création d'un contrat
-    // ==========================================
     case 'POST':
-        try {
-            $json = file_get_contents('php://input');
-            $data = json_decode($json, true);
+    
+        // Validation champs obligatoires
+        if (empty($body['locataire_id'])) badRequest('locataire_id manquant');
+        if (empty($body['bien_id']))      badRequest('bien_id manquant');
+        if (empty($body['date_debut']))   badRequest('date_debut manquante');
+        if (empty($body['loyer']))        badRequest('loyer manquant');
 
-            if (!$data) {
-                echo json_encode(["success" => false, "message" => "Données reçues malformées."]);
-                exit;
-            }
+        // Récupérer agent_immobilier lié à cet utilisateur
+        $agentRow = $db->prepare("
+            SELECT id FROM agent_immobilier WHERE utilisateur_id = ?
+        ");
+        $agentRow->execute([$user['id']]);
+        $agent = $agentRow->fetch();
 
-            // Validation minimale des champs obligatoires
-            if (!isset($data['locataire_id']) || !isset($data['bien_id']) || !isset($data['date_debut'])) {
-                echo json_encode(["success" => false, "message" => "Champs obligatoires manquants."]);
-                exit;
-            }
-
-            $query = "INSERT INTO {$table} (locataire_id, bien_id, date_debut, date_fin, loyer_mensuel, montant_caution, frais_agence, statut) 
-                      VALUES (:locataire_id, :bien_id, :date_debut, :date_fin, :loyer_mensuel, :montant_caution, :frais_agence, :statut)";
-            
-            $stmt = $pdo->prepare($query);
-            $result = $stmt->execute([
-                ':locataire_id'    => $data['locataire_id'],
-                ':bien_id'         => $data['bien_id'],
-                ':date_debut'      => $data['date_debut'],
-                ':date_fin'        => $data['date_fin'] ?? null,
-                ':loyer_mensuel'   => $data['loyer_mensuel'] ?? 0,
-                ':montant_caution' => $data['montant_caution'] ?? 0,
-                ':frais_agence'    => $data['frais_agence'] ?? 0,
-                ':statut'          => $data['statut'] ?? 'en_cours'
-            ]);
-
-            if ($result) {
-                echo json_encode([
-                    "success" => true,
-                    "message" => "Contrat créé avec succès.",
-                    "data" => ["id" => $pdo->lastInsertId()]
-                ]);
-            } else {
-                echo json_encode(["success" => false, "message" => "Échec de l'insertion."]);
-            }
-        } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode(["success" => false, "message" => "Erreur : " . $e->getMessage()]);
+        // Si l'utilisateur n'est pas un agent, chercher n'importe quel agent
+        if (!$agent) {
+            $agent = $db->query("SELECT id FROM agent_immobilier LIMIT 1")->fetch();
         }
-        break;
+        if (!$agent) badRequest('Aucun agent disponible pour signer ce contrat');
 
-    // ==========================================
-    // CAS PUT : Modification du contrat (Statut ou global)
-    // ==========================================
-    case 'PUT':
-        try {
-            // Récupérer l'ID passé en paramètre d'URL (?id=X)
-            $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-            
-            if ($id <= 0) {
-                echo json_encode(["success" => false, "message" => "ID de contrat manquant ou invalide."]);
-                exit;
-            }
-
-            $json = file_get_contents('php://input');
-            $data = json_decode($json, true);
-
-            if (!$data) {
-                echo json_encode(["success" => false, "message" => "Aucune donnée à modifier reçue."]);
-                exit;
-            }
-
-            // CORRECTION SÉCURISÉE : Évite l'erreur "Undefined array key"
-            $statut        = $data['statut'] ?? null;
-            $loyer_mensuel = $data['loyer_mensuel'] ?? null;
-            $montant_caution= $data['montant_caution'] ?? null;
-            $date_debut    = $data['date_debut'] ?? null;
-            $date_fin      = $data['date_fin'] ?? null;
-            $frais_agence  = $data['frais_agence'] ?? null;
-
-            // Détection : Si l'application envoie UNIQUEMENT le statut
-            if (count($data) === 1 && isset($data['statut'])) {
-                $query = "UPDATE {$table} SET statut = :statut WHERE id = :id";
-                $stmt = $pdo->prepare($query);
-                $result = $stmt->execute([
-                    ':statut' => $statut,
-                    ':id'     => $id
-                ]);
-            } else {
-                // Sinon, c'est une mise à jour complète depuis un formulaire complet
-                $query = "UPDATE {$table} SET 
-                            date_debut = COALESCE(:date_debut, date_debut),
-                            date_fin = COALESCE(:date_fin, date_fin),
-                            loyer_mensuel = COALESCE(:loyer_mensuel, loyer_mensuel),
-                            montant_caution = COALESCE(:montant_caution, montant_caution),
-                            frais_agence = COALESCE(:frais_agence, frais_agence)";
-                
-                $params = [
-                    ':date_debut'      => $date_debut,
-                    ':date_fin'        => $date_fin,
-                    ':loyer_mensuel'   => $loyer_mensuel,
-                    ':montant_caution' => $montant_caution,
-                    ':frais_agence'    => $frais_agence,
-                    ':id'              => $id
-                ];
-
-                if ($statut !== null) {
-                    $query .= ", statut = :statut";
-                    $params[':statut'] = $statut;
-                }
-
-                $query .= " WHERE id = :id";
-                
-                $stmt = $pdo->prepare($query);
-                $result = $stmt->execute($params);
-            }
-
-            if ($result) {
-                echo json_encode([
-                    "success" => true,
-                    "message" => "Contrat modifié avec succès.",
-                    "data" => ["id" => $id]
-                ]);
-            } else {
-                echo json_encode(["success" => false, "message" => "Aucune modification n'a été appliquée."]);
-            }
-        } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode(["success" => false, "message" => "Erreur lors de la modification : " . $e->getMessage()]);
-        }
-        break;
-
-    // ==========================================
-    // CAS PAR DÉFAUT
-    // ==========================================
-    default:
-        http_response_code(405);
-        echo json_encode([
-            "success" => false,
-            "message" => "Méthode HTTP " . $method . " non autorisée."
+        $stmt = $db->prepare("
+            INSERT INTO contrat_location
+                (locataire_id, bien_id, agent_id, date_debut, date_fin,
+                 duree_mois, loyer, caution, jour_echeance, statut, observations)
+            VALUES
+                (:lid, :bid, :aid, :debut, :fin,
+                 :duree, :loyer, :caution, :echeance, 'en_cours', :obs)
+        ");
+        $stmt->execute([
+            ':lid'      => (int)$body['locataire_id'],
+            ':bid'      => (int)$body['bien_id'],
+            ':aid'      => $agent['id'],
+            ':debut'    => $body['date_debut'],
+            ':fin'      => !empty($body['date_fin']) ? $body['date_fin'] : null,
+            ':duree'    => !empty($body['duree_mois']) ? (int)$body['duree_mois'] : null,
+            ':loyer'    => (float)$body['loyer'],
+            ':caution'  => (float)($body['caution'] ?? 0),
+            ':echeance' => (int)($body['jour_echeance'] ?? 5),
+            ':obs'      => trim($body['observations'] ?? ''),
         ]);
+
+        $newId = $db->lastInsertId();
+
+        // Marquer le bien comme occupé
+        $db->prepare("
+            UPDATE bien_immobilier SET statut = 'occupe' WHERE id = ?
+        ")->execute([(int)$body['bien_id']]);
+
+        // Journal
+        $db->prepare("
+            INSERT INTO journal_activite (utilisateur_id, action, table_cible, id_cible, ip)
+            VALUES (?, 'contrat_cree', 'contrat_location', ?, ?)
+        ")->execute([$user['id'], $newId, $_SERVER['REMOTE_ADDR'] ?? '']);
+
+        created(['id' => $newId], 'Contrat créé avec succès');
         break;
+
+    // ════════════════════════════════════════════════════════
+    case 'PUT':
+    // ════════════════════════════════════════════════════════
+        if (!$id) badRequest('ID contrat manquant');
+
+        // Récupérer le contrat actuel pour avoir toutes les valeurs
+        $actuel = $db->prepare("SELECT * FROM contrat_location WHERE id = ?");
+        $actuel->execute([$id]);
+        $contrat = $actuel->fetch();
+        if (!$contrat) notFound('Contrat introuvable');
+
+        // Fusionner avec les nouvelles valeurs (on ne modifie que ce qui est envoyé)
+        $nouveauStatut = isset($body['statut']) ? $body['statut'] : $contrat['statut'];
+        $nouveauLoyer  = isset($body['loyer'])  ? (float)$body['loyer'] : (float)$contrat['loyer'];
+        $dateFin       = isset($body['date_fin']) ? $body['date_fin'] : $contrat['date_fin'];
+        $duree         = isset($body['duree_mois']) ? (int)$body['duree_mois'] : $contrat['duree_mois'];
+        $caution       = isset($body['caution']) ? (float)$body['caution'] : (float)$contrat['caution'];
+        $echeance      = isset($body['jour_echeance']) ? (int)$body['jour_echeance'] : (int)$contrat['jour_echeance'];
+        $obs           = isset($body['observations']) ? trim($body['observations']) : $contrat['observations'];
+
+        $stmt = $db->prepare("
+            UPDATE contrat_location SET
+                statut        = :statut,
+                loyer         = :loyer,
+                date_fin      = :date_fin,
+                duree_mois    = :duree,
+                caution       = :caution,
+                jour_echeance = :echeance,
+                observations  = :obs
+            WHERE id = :id
+        ");
+        $stmt->execute([
+            ':statut'   => $nouveauStatut,
+            ':loyer'    => $nouveauLoyer,
+            ':date_fin' => $dateFin,
+            ':duree'    => $duree,
+            ':caution'  => $caution,
+            ':echeance' => $echeance,
+            ':obs'      => $obs,
+            ':id'       => $id,
+        ]);
+
+        // Si contrat terminé ou résilié → libérer le bien
+        if (in_array($nouveauStatut, ['termine', 'resilie'])) {
+            $db->prepare("
+                UPDATE bien_immobilier SET statut = 'libre'
+                WHERE id = (SELECT bien_id FROM contrat_location WHERE id = ?)
+            ")->execute([$id]);
+        }
+
+        // Journal
+        $db->prepare("
+            INSERT INTO journal_activite (utilisateur_id, action, table_cible, id_cible, details, ip)
+            VALUES (?, 'contrat_modifie', 'contrat_location', ?, ?, ?)
+        ")->execute([
+            $user['id'], $id,
+            'Nouveau statut : ' . $nouveauStatut,
+            $_SERVER['REMOTE_ADDR'] ?? ''
+        ]);
+
+        ok(['id' => $id, 'statut' => $nouveauStatut], 'Contrat modifié avec succès');
+        break;
+
+    default:
+        badRequest('Méthode non autorisée');
 }
